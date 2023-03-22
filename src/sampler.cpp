@@ -56,6 +56,20 @@ arma::mat D(modelParam data){
         return D_m;
 }
 
+// // Create a function to generate matrix D (for penalisation)
+arma::mat D_diag(modelParam data){
+
+  // Creating the matrix elements
+  arma::mat D_m((data.p),data.p,arma::fill::zeros);
+
+  for(int i=0;i<(data.p);i++){
+    D_m(i,i) = 1;
+
+  }
+
+  return D_m;
+}
+
 // Building the beta sampler
 void beta_sampler(arma::vec& betas,
                   modelParam& data){
@@ -168,7 +182,9 @@ Rcpp::List sp_sampler(arma::mat B_train,
                         n_burn);
 
     // Generating the P matrix
+    // arma::mat D_m = D(data);
     arma::mat D_m = D(data);
+
     data.P = D_m.t()*D_m;
 
     // Initializing the vector of betas
