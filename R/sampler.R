@@ -1,0 +1,98 @@
+# Wrapping the model with a R code
+rsp_sampler <- function(x_train,
+                   y,
+                   nIknots,
+                   df = 3,
+                   sigquant = 0.9,
+                   delta,
+                   nu,
+                   a_delta,
+                   d_delta,
+                   n_mcmc,
+                   n_burn,
+                   scale_y = TRUE){
+
+  # Scaling x
+  x_min <- apply(as.matrix(x_train),2,min)
+  x_max <- apply(as.matrix(x_train),2,max)
+
+  # Storing the original
+  x_train_original <- x_train
+  x_train_scale <- x_train
+
+  # Normalising all the columns
+  for(i in 1:ncol(x_train)){
+    x_train_scale[,i] <- normalize_covariates_bart(y = x_train_scale[,i],a = x_min[i], b = x_max[i])
+  }
+
+  # Scaling the y
+  min_y <- min(y)
+  max_y <- max(y)
+
+  absolut_min <- min(min(x_train_scale[,1]))
+  absolut_max <- max(max(x_train_scale[,1]))
+
+  # Getting the internal knots
+  knots <- quantile(x_train_scale[,1],seq(0,1,length.out = nIknots+2))[-c(1,nIknots+2)]
+
+  # Creating the B spline
+  B_train <- as.matrix(splines::ns(x = x_train_scale[,1],knots = knots,
+                                   intercept = FALSE,
+                                   Boundary.knots = c(absolut_min,absolut_max)))
+
+  # Scaling "y"
+  if(scale_y){
+    y_scale <- normalize_bart(y = y,a = min_y,b = max_y)
+  } else {
+    y_scale <- y
+  }
+
+  # Calculating \tau_{mu}
+  if(scale_y){
+    tau_b_0 <- tau_b <- (4*1*(2^2))
+  } else {
+    tau_b_0 <- tau_b <- (4*1*(2^2))/((min_y-max_y)^2)
+  }
+  # Getting the naive sigma value
+  nsigma <- naive_sigma(x = x_train_scale,y = y_scale)
+
+  # Calculating tau hyperparam
+  a_tau <- df/2
+
+  # Calculating lambda
+  qchi <- stats::qchisq(p = 1-sigquant,df = df,lower.tail = 1,ncp = 0)
+  lambda <- (nsigma*nsigma*qchi)/df
+  d_tau <- (lambda*df)/2
+
+  # Call the bart function
+  tau_init <- nsigma^(-2)
+
+  sampler_list <- sp_sampler(B_train = B_train,
+                             y = y_scale,tau_b = tau_b,tau_b_intercept = tau_b_0,
+                             tau = tau_init,a_tau = a_tau,d_tau = d_tau,
+                             nu = nu,delta = delta,a_delta = a_delta,
+                             d_delta = d_delta,n_mcmc = n_mcmc,n_burn = n_burn)
+
+  # Tidying up the posterior elements
+  if(scale_y){
+    y_train_post <- unnormalize_bart(z = sampler_list[[3]],a = min_y,b = max_y)
+    tau_b_post <- sampler_list[[4]]/((max_y-min_y)^2)
+    tau_post <-  sampler_list[[6]]/((max_y-min_y)^2)
+  } else {
+    y_train_post <- sampler_list[[3]]
+    tau_b_post <- sampler_list[[4]]
+    tau_post <-  sampler_list[[6]]
+
+  }
+
+  beta_post <- sampler_list[[1]]
+  beta_0_post <- sampler_list[[2]]
+  delta_post <- sampler_list[[5]]
+
+  return(list(beta_post = beta_post,
+              beta_0_post = beta_0_post,
+              y_train_post = y_train_post,
+              tau_post = tau_post,
+              tau_b_post = tau_b_post,
+              delta_post = delta_post))
+}
