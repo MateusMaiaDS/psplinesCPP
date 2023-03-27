@@ -60,9 +60,9 @@ x_min <- apply(as.matrix(x_train_original),2,min)
 x_max <- apply(as.matrix(x_train_original),2,max)
 
 # Normalising all the columns
-for(i in 1:ncol(x_train_scale)){
-  x_train_scale[,i] <- normalize_covariates_bart(y = x_train_scale[,i],a = x_min[i], b = x_max[i])
-}
+# for(i in 1:ncol(x_train_scale)){
+#   x_train_scale[,i] <- normalize_covariates_bart(y = x_train_scale[,i],a = x_min[i], b = x_max[i])
+# }
 
 # Scaling the y
 min_y <- min(y)
@@ -72,7 +72,7 @@ absolut_min <- min(min(x_train_scale[,1]))
 absolut_max <- max(max(x_train_scale[,1]))
 
 # Setting the nIknots and the basis that will be used
-nIknots <- 10
+nIknots <- 100
 # Getting the internal knots
 knots <- quantile(x_train_scale[,1],seq(0,1,length.out = nIknots+2))[-c(1,nIknots+2)]
 
@@ -81,8 +81,9 @@ B_train <- as.matrix(splines::ns(x = x_train_scale[,1],knots = knots,
                                  intercept = FALSE,
                                  Boundary.knots = c(absolut_min,absolut_max)))
 
-
-y_scale <- normalize_bart(y = y,a = min_y,b = max_y)
+# Deciding if scale or not
+# y_scale <- normalize_bart(y = y,a = min_y,b = max_y)
+y_scale <- y
 
 # Getting the naive sigma value
 nsigma <- naive_sigma(x = x_train_scale,y = y_scale)
@@ -97,6 +98,10 @@ qchi <- stats::qchisq(p = 1-sigquant,df = df,lower.tail = 1,ncp = 0)
 lambda <- (nsigma*nsigma*qchi)/df
 d_tau <- (lambda*df)/2
 
+# Calculating penalisation matrix
+n_diffs <- 1
+D <- diff(diag(ncol(B_train)), diff = n_diffs )
+P <- crossprod(D)
 
 # Jags code ---------------------------------------------------------------
 
@@ -105,16 +110,12 @@ model_code <- "
 model {
   # Likelihood
   for (t in 1:N) {
-    y[t] ~ dnorm(inprod(B[t,], beta)+beta_intercept, tau)
+    y[t] ~ dnorm(inprod(B[t,1:N_knots],beta[1:N_knots])+beta_intercept, tau)
   }
 
   # RW prior on beta
   beta_intercept ~ dnorm(0,tau_b_0)
-  beta[1] ~ dnorm(0, tau_b)
-  for (i in 2:(N_knots)) {
-    beta[i] ~ dnorm(beta[i-1] , tau_b)
-
-  }
+  beta[1:N_knots] ~ dmnorm(rep(0,N_knots),tau_b*P)
 
   # Priors on beta values
   tau ~ dgamma(a_tau, d_tau)
@@ -133,8 +134,9 @@ model_data <- list(
   d_tau = d_tau,
   a_delta = 0.0001, # Default values used in Jullion, A. and Lambert, P., 2007.
   d_delta = 0.0001, # Default values used in Jullion, A. and Lambert, P., 2007.
-  tau_b_0 = 16,
-  nu = 2
+  tau_b_0 = 16/(diff(range(y_scale))^2),
+  nu = 2,
+  P = P
 ) # Default values used in Jullion, A. and Lambert, P., 2007.
 
 # Choose the parameters to watch
@@ -176,14 +178,10 @@ col = c("red", "blue", "black")
 
 
 
-# Matrix multiplications experiments
-# first_ord_dif <- function(n){
-#   m <- matrix(0,nrow = n-1,ncol = n)
-#   for(i in 1:(n-1)){
-#       m[i,i] <- -1
-#       m[i,i+1] <- 1
-#   }
-#   return(m)
-# }
-
+# Traceplots
+par(mfrow=c(2,2))
+plot(model_run$BUGSoutput$sims.list$beta_intercept,type = "l", main = expression(beta[0]))
+plot(model_run$BUGSoutput$sims.list$tau_b,type = "l", main = expression(tau[b]))
+plot(model_run$BUGSoutput$sims.list$delta,type = "l", main = expression(delta))
+plot(model_run$BUGSoutput$sims.list$tau,type = "l", main = expression(tau))
 

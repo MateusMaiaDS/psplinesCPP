@@ -1,3 +1,8 @@
+# Creating the D (difference matrix)
+D_gen <- function(p, n_dif){
+  return(diff(diag(p),diff = n_dif))
+}
+
 # Wrapping the model with a R code
 rsp_sampler <- function(x_train,
                    y,
@@ -40,6 +45,13 @@ rsp_sampler <- function(x_train,
                                    intercept = FALSE,
                                    Boundary.knots = c(absolut_min,absolut_max)))
 
+  # Getting a penalized version of B_train
+  D <- D_gen(p = ncol(B_train),n_dif = 2)
+
+  # IN CASE WE WANT TO USE THE DIFFERENCE PENALISATION DIRECTLY OVER THE
+  #BASIS FUNCTION
+  B_train <- B_train%*%crossprod(D,solve(tcrossprod(D)))
+
   # Scaling "y"
   if(scale_y){
     y_scale <- normalize_bart(y = y,a = min_y,b = max_y)
@@ -49,9 +61,12 @@ rsp_sampler <- function(x_train,
 
   # Calculating \tau_{mu}
   if(scale_y){
-    tau_b_0 <- tau_b <- (4*1*(2^2))
+    tau_b_0 <-  (4*1*(2^2))*10
+    tau_b <- (4*1*(2^2))*10
+
   } else {
-    tau_b_0 <- tau_b <- (4*1*(2^2))/((min_y-max_y)^2)
+    tau_b_0 <- (4*1*(2^2))/((min_y-max_y)^2)
+    tau_b <- (4*1*(2^2))*10
   }
   # Getting the naive sigma value
   nsigma <- naive_sigma(x = x_train_scale,y = y_scale)

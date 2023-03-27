@@ -70,20 +70,37 @@ arma::mat D_diag(modelParam data){
   return D_m;
 }
 
+// // Create a function to generate matrix D (for penalisation)
+arma::mat D_first(modelParam data){
+
+  // Creating the matrix elements
+  arma::mat D_m((data.p-1),data.p,arma::fill::zeros);
+
+  for(int i=0;i<(data.p-1);i++){
+    D_m(i,i) = -1;
+    D_m(i,i+1) = 1;
+  }
+
+  return D_m;
+}
+
 // Building the beta sampler
 void beta_sampler(arma::vec& betas,
+                  double& beta_0,
                   modelParam& data){
 
 
   // Updating data s_b_0
-  data.s_b_0 = (data.y.n_rows+(data.tau_b/data.tau));
+  data.s_b_0 = (data.y.n_rows+(data.tau_b_intercept/data.tau));
 
   // Calculating Gamma Inv
-  data.Gamma_inv = inv(data.B_train.t()*data.B_train + (data.tau_b/data.tau)*data.P - (1/data.s_b_0)*(data.bt_ones*data.bt_ones.t()));
+  // data.Gamma_inv = inv(data.B_train.t()*data.B_train + (data.tau_b/data.tau)*data.P - (1/data.s_b_0)*(data.bt_ones*data.bt_ones.t()));
+  data.Gamma_inv = inv(data.B_train.t()*data.B_train + (data.tau_b/data.tau)*data.P );
 
-
+  // Ones aux
+  arma::mat ones(data.B_train.n_rows,1,arma::fill::ones);
   // Calculating mean and variance
-  arma::mat beta_mean = data.Gamma_inv*data.btr;
+  arma::mat beta_mean = data.Gamma_inv*(data.btr-beta_0*data.B_train.t()*ones);
   arma::mat beta_cov  = (1/data.tau)*data.Gamma_inv;
 
   arma::mat sample = arma::randn<arma::mat>(data.Gamma_inv.n_cols);
@@ -182,15 +199,15 @@ Rcpp::List sp_sampler(arma::mat B_train,
                         n_burn);
 
     // Generating the P matrix
-    // arma::mat D_m = D(data);
-    arma::mat D_m = D(data);
+    arma::mat D_m = D_diag(data);
+    // arma::mat D_m = D_first(data);
 
     data.P = D_m.t()*D_m;
 
     // Initializing the vector of betas
     // cout << "Error 1" << endl;
     arma::vec betas(data.p, arma::fill::ones);
-    double beta_0 = 1;
+    double beta_0 = 0;
     arma::vec y_hat(data.y.n_rows,arma::fill::zeros);
 
     // Storing the posteriors
@@ -209,7 +226,7 @@ Rcpp::List sp_sampler(arma::mat B_train,
     for(int i = 0; i < data.n_mcmc; i++){
 
       // cout << "Beta error" << endl;
-      beta_sampler(betas, data);
+      beta_sampler(betas,beta_0, data);
       // cout << "Beta_0 error" << endl;
       beta_0_sampler(betas, beta_0, data);
       // cout << "Tau_b error" << endl;
