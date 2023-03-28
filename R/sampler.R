@@ -111,3 +111,8 @@ rsp_sampler <- function(x_train,
               tau_b_post = tau_b_post,
               delta_post = delta_post))
 }
+
+
+
+
+
